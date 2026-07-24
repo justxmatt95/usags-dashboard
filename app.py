@@ -33,11 +33,12 @@ body{margin:0;background:#eef2f5;color:#13242e;font-family:system-ui,-apple-syst
 .empty{color:#66727a;font-size:14px;padding:10px 0}
 .err{color:#933;font-size:13.5px;padding:10px 0}
 a{color:#155C7A;text-decoration:none}
-.sales{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-.stat{border:1px solid #eef2f5;border-radius:10px;padding:12px 14px;background:#f7fafc}
-.stat .lbl{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:#8a97a0}
-.stat .rev{font-size:20px;font-weight:600;color:#0E2C3B;margin-top:4px}
-.stat .ord{font-size:12.5px;color:#566772;margin-top:2px}
+.sales{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.stat{min-width:0;border:1px solid #eef2f5;border-radius:10px;padding:11px 10px;background:#f7fafc}
+.stat .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#8a97a0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat .rev{font-size:17px;font-weight:600;color:#0E2C3B;margin-top:4px}
+.stat .ord{font-size:12px;color:#566772;margin-top:2px}
+.cur{font-size:12px;font-weight:400;color:#8a97a0}
 .note{font-size:12px;color:#8a97a0;padding-top:8px}
 @media(max-width:520px){.sales{grid-template-columns:1fr}}
 """
@@ -71,12 +72,12 @@ def render_sales():
         for w in data["windows"]:
             rev = f"{w['revenue']:,.2f}"
             cards.append(f"<div class=stat><div class=lbl>{esc(w['label'])}</div>"
-                         f"<div class=rev>{esc(cur)} {rev}</div>"
+                         f"<div class=rev>{rev}</div>"
                          f"<div class=ord>{w['orders']} order{'s' if w['orders']!=1 else ''}</div></div>")
         note = "<div class=note>Showing the most recent 30 days (capped).</div>" if data.get("capped") else ""
         inner = f"<div class=sales>{''.join(cards)}</div>{note}"
-        if data.get("shop"):
-            title = f"Shopify Sales · {esc(data['shop'])}"
+        shop = esc(data.get("shop") or "")
+        title = f"Shopify Sales · {shop} <span class=cur>({esc(cur)})</span>" if shop else f"Shopify Sales <span class=cur>({esc(cur)})</span>"
     return f"<div class=tile><h2>{title}</h2><div class=body>{inner}</div></div>"
 
 @app.route("/")

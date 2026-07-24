@@ -34,7 +34,7 @@ def _gql(domain, tok, query, variables):
                  {"Content-Type": "application/json", "X-Shopify-Access-Token": tok})
 
 _SHOP_Q = "{ shop { name currencyCode ianaTimezone } }"
-_ORDERS_Q = """query($q:String!,$after:String){orders(first:250,query:$q,sortKey:CREATED_AT,after:$after){
+_ORDERS_Q = """query($q:String!,$after:String){orders(first:250,query:$q,sortKey:CREATED_AT,reverse:true,after:$after){
   edges{node{createdAt currentTotalPriceSet{shopMoney{amount}}}}
   pageInfo{hasNextPage endCursor}}}"""
 
