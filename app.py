@@ -82,8 +82,9 @@ def render_sales():
             cards.append(f"<div class=stat><div class=lbl>{esc(w['label'])}</div>"
                          f"<div class=vals><div class=rev>{esc(rev)}</div>"
                          f"<div class=ord>{w['orders']} order{'s' if w['orders']!=1 else ''}</div></div></div>")
-        note = "<div class=note>Showing the most recent 30 days (capped).</div>" if data.get("capped") else ""
-        inner = f"<div class=sales>{''.join(cards)}</div>{note}"
+        today_w = next((x for x in data["windows"] if x["label"] == "Today"), None)
+        ref = f"<div class=note>Refunds today: {esc(sym)}{today_w.get('refunds', 0):,.2f}</div>" if today_w else ""
+        inner = f"<div class=sales>{''.join(cards)}</div>{ref}"
         shop = esc(data.get("shop") or "")
         title = f"Shopify Sales · {shop} <span class=cur>({esc(cur)})</span>" if shop else f"Shopify Sales <span class=cur>({esc(cur)})</span>"
     return f"<div class=tile><h2>{title}</h2><div class=body>{inner}</div></div>"
