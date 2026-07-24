@@ -24,16 +24,17 @@ assert "Upcoming Calendar" in html and "Vendor call" in html and "Zoom" in html
 assert "&lt;" not in "Vendor call"  # sanity
 print("render (events) OK")
 
-# 2b) a URL in the location becomes a clickable link; hangoutLink -> "Join video call"
+# 2b) a URL in the location becomes a clickable link; an auto-added hangoutLink
+#     must NOT produce a "Join video call" label (Workspace stamps it on everything)
 link_items = gcal._normalize([
     {"summary": "Design review", "start": {"dateTime": "2026-07-25T10:00:00-04:00"},
      "location": "Call here: https://zoom.us/j/123456", "hangoutLink": "https://meet.google.com/abc-defg-hij"},
 ])
 gcal.upcoming_events = lambda limit=8: {"events": link_items, "count": 1}
 h = A.render_calendar()
-assert "<a href='https://zoom.us/j/123456'" in h, h          # location URL is a link
-assert "Join video call" in h and "https://meet.google.com/abc-defg-hij" in h, h
-print("linkify OK: location URLs + Meet link are clickable")
+assert "<a href='https://zoom.us/j/123456'" in h, h          # real location URL is a link
+assert "Join video call" not in h and "meet.google.com" not in h, h  # no manufactured link
+print("linkify OK: real location URLs clickable; no auto video-call label")
 
 # 2c) a location URL with markup is still escaped (no injection via location)
 inj = gcal._normalize([{"summary": "X", "start": {"date": "2026-07-28"},

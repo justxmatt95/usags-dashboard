@@ -76,13 +76,11 @@ def render_calendar():
         rows = []
         for e in data["events"]:
             loc = f"<div class=loc>{linkify(e['location'])}</div>" if e["location"] else ""
-            meet = (f"<div class=loc><a href='{esc(e['meet'])}' target='_blank' rel='noopener'>"
-                    "Join video call</a></div>") if e.get("meet") else ""
             title = esc(e["title"])
             if e["url"]:
                 title = f"<a href='{esc(e['url'])}' target='_blank' rel='noopener'>{title}</a>"
             rows.append(f"<div class=evt><div class=when>{esc(e['when'])}</div>"
-                        f"<div class=info><div class=what>{title}</div>{loc}{meet}</div></div>")
+                        f"<div class=info><div class=what>{title}</div>{loc}</div></div>")
         inner = "".join(rows)
     return f"<div class=tile><h2>Upcoming Calendar</h2><div class=body>{inner}</div></div>"
 

@@ -37,7 +37,6 @@ def _normalize(items):
             "all_day": all_day,
             "location": e.get("location", ""),
             "url": e.get("htmlLink", ""),
-            "meet": e.get("hangoutLink", ""),
         })
     return out
 
