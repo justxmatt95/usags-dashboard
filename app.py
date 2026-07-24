@@ -9,9 +9,10 @@ internet we add the same auth + Caddy/HTTPS as the agent (see README).
 import os, html as _html
 from flask import Flask
 from dotenv import load_dotenv
-import gcal
 
-load_dotenv()
+load_dotenv()          # load .env before providers read config
+import gcal
+import shopify
 app = Flask(__name__)
 
 def esc(s): return _html.escape(str(s or ""))
@@ -32,6 +33,13 @@ body{margin:0;background:#eef2f5;color:#13242e;font-family:system-ui,-apple-syst
 .empty{color:#66727a;font-size:14px;padding:10px 0}
 .err{color:#933;font-size:13.5px;padding:10px 0}
 a{color:#155C7A;text-decoration:none}
+.sales{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.stat{border:1px solid #eef2f5;border-radius:10px;padding:12px 14px;background:#f7fafc}
+.stat .lbl{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:#8a97a0}
+.stat .rev{font-size:20px;font-weight:600;color:#0E2C3B;margin-top:4px}
+.stat .ord{font-size:12.5px;color:#566772;margin-top:2px}
+.note{font-size:12px;color:#8a97a0;padding-top:8px}
+@media(max-width:520px){.sales{grid-template-columns:1fr}}
 """
 
 def render_calendar():
@@ -52,9 +60,28 @@ def render_calendar():
         inner = "".join(rows)
     return f"<div class=tile><h2>Upcoming Calendar</h2><div class=body>{inner}</div></div>"
 
+def render_sales():
+    data = shopify.sales()
+    title = "Shopify Sales"
+    if "error" in data:
+        inner = f"<div class=err>{esc(data['error'])}</div>"
+    else:
+        cur = data.get("currency", "")
+        cards = []
+        for w in data["windows"]:
+            rev = f"{w['revenue']:,.2f}"
+            cards.append(f"<div class=stat><div class=lbl>{esc(w['label'])}</div>"
+                         f"<div class=rev>{esc(cur)} {rev}</div>"
+                         f"<div class=ord>{w['orders']} order{'s' if w['orders']!=1 else ''}</div></div>")
+        note = "<div class=note>Showing the most recent 30 days (capped).</div>" if data.get("capped") else ""
+        inner = f"<div class=sales>{''.join(cards)}</div>{note}"
+        if data.get("shop"):
+            title = f"Shopify Sales · {esc(data['shop'])}"
+    return f"<div class=tile><h2>{title}</h2><div class=body>{inner}</div></div>"
+
 @app.route("/")
 def home():
-    tiles = [render_calendar()]  # more tiles appended here later
+    tiles = [render_calendar(), render_sales()]  # more tiles appended here later
     return ("<!doctype html><meta charset=utf-8>"
             "<meta name=viewport content='width=device-width,initial-scale=1'>"
             "<title>USAGS Dashboard</title>"
