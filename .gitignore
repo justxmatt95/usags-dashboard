@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+# secrets / tokens — never commit
+gcal_token.json
+client_secret*.json
+.secret_key

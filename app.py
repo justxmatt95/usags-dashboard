@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""USAGS dashboard (MVP). Renders tiles from various sources; first tile is the
+Google Calendar 'upcoming events'. More tiles (Shopify sales, Zendesk) slot in
+the same way: a provider module returns data, a render_* function makes a card.
+
+NOTE: no login yet — bind to localhost for local testing. Before this goes on the
+internet we add the same auth + Caddy/HTTPS as the agent (see README).
+"""
+import os, html as _html
+from flask import Flask
+from dotenv import load_dotenv
+import gcal
+
+load_dotenv()
+app = Flask(__name__)
+
+def esc(s): return _html.escape(str(s or ""))
+
+CSS = """
+*{box-sizing:border-box}
+body{margin:0;background:#eef2f5;color:#13242e;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+.top{background:#0E2C3B;color:#fff;padding:16px 24px;font-weight:600;letter-spacing:.04em}
+.grid{max-width:1100px;margin:0 auto;padding:24px 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px}
+.tile{background:#fff;border:1px solid #d5dee4;border-radius:12px;overflow:hidden}
+.tile h2{margin:0;padding:14px 18px;font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:#155C7A;border-bottom:1px solid #eef2f5}
+.tile .body{padding:6px 18px 14px}
+.evt{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px dashed #e1e8ec}
+.evt:last-child{border-bottom:none}
+.evt .when{flex:0 0 auto;width:120px;font-size:12.5px;color:#566772;padding-top:2px}
+.evt .what{font-size:15px}
+.evt .loc{font-size:12.5px;color:#8a97a0}
+.empty{color:#66727a;font-size:14px;padding:10px 0}
+.err{color:#933;font-size:13.5px;padding:10px 0}
+a{color:#155C7A;text-decoration:none}
+"""
+
+def render_calendar():
+    data = gcal.upcoming_events(8)
+    if "error" in data:
+        inner = f"<div class=err>{esc(data['error'])}</div>"
+    elif not data["events"]:
+        inner = "<div class=empty>No upcoming events.</div>"
+    else:
+        rows = []
+        for e in data["events"]:
+            loc = f"<div class=loc>{esc(e['location'])}</div>" if e["location"] else ""
+            title = esc(e["title"])
+            if e["url"]:
+                title = f"<a href='{esc(e['url'])}' target='_blank' rel='noopener'>{title}</a>"
+            rows.append(f"<div class=evt><div class=when>{esc(e['when'])}</div>"
+                        f"<div><div class=what>{title}</div>{loc}</div></div>")
+        inner = "".join(rows)
+    return f"<div class=tile><h2>Upcoming Calendar</h2><div class=body>{inner}</div></div>"
+
+@app.route("/")
+def home():
+    tiles = [render_calendar()]  # more tiles appended here later
+    return ("<!doctype html><meta charset=utf-8>"
+            "<meta name=viewport content='width=device-width,initial-scale=1'>"
+            "<title>USAGS Dashboard</title>"
+            f"<style>{CSS}</style>"
+            "<div class=top>USAGS Dashboard</div>"
+            f"<div class=grid>{''.join(tiles)}</div>")
+
+if __name__ == "__main__":
+    app.run(host=os.getenv("DASH_BIND", "127.0.0.1"), port=int(os.getenv("DASH_PORT", "8002")))
