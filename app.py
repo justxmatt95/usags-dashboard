@@ -46,6 +46,8 @@ a{color:#155C7A;text-decoration:none}
 .stat .rev{font-size:18px;font-weight:600;color:#0E2C3B}
 .stat .ord{font-size:12px;color:#566772;margin-top:2px}
 .cur{font-size:12px;font-weight:400;color:#8a97a0}
+.subhead{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:#155C7A;font-weight:600;margin:16px 0 8px}
+.stat.refund .rev{color:#933}
 .note{font-size:12px;color:#8a97a0;padding-top:8px}
 @media(max-width:520px){.sales{grid-template-columns:1fr}}
 """
@@ -83,7 +85,14 @@ def render_sales():
                          f"<div class=vals><div class=rev>{esc(rev)}</div>"
                          f"<div class=ord>{w['orders']} order{'s' if w['orders']!=1 else ''}</div></div></div>")
         today_w = next((x for x in data["windows"] if x["label"] == "Today"), None)
-        ref = f"<div class=note>Refunds today: {esc(sym)}{today_w.get('refunds', 0):,.2f}</div>" if today_w else ""
+        ref = ""
+        if today_w:
+            items = today_w.get("refund_items", 0)
+            ref = ("<div class=subhead>Refunds</div>"
+                   "<div class=sales><div class='stat refund'><div class=lbl>Today</div>"
+                   f"<div class=vals><div class=rev>{esc(sym)}{today_w.get('refunds', 0):,.2f}</div>"
+                   f"<div class=ord>{items} item{'s' if items != 1 else ''} refunded</div>"
+                   "</div></div></div>")
         inner = f"<div class=sales>{''.join(cards)}</div>{ref}"
         shop = esc(data.get("shop") or "")
         title = f"Shopify Sales · {shop} <span class=cur>({esc(cur)})</span>" if shop else f"Shopify Sales <span class=cur>({esc(cur)})</span>"

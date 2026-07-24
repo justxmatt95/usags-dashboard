@@ -20,7 +20,7 @@ except Exception:
 API_VERSION = "2026-07"
 
 # 31 daily rows (30d ago .. today). ShopifyQL day timestamps are in the shop's tz.
-_SALES_QL = "FROM sales SHOW total_sales, orders, returns TIMESERIES day SINCE -30d UNTIL today ORDER BY day ASC"
+_SALES_QL = "FROM sales SHOW total_sales, orders, returns, quantity_returned TIMESERIES day SINCE -30d UNTIL today ORDER BY day ASC"
 _QL_Q = "query($q:String!){shopifyqlQuery(query:$q){tableData{columns{name} rows} parseErrors}}"
 _SHOP_Q = "{ shop { name currencyCode ianaTimezone } }"
 
@@ -44,9 +44,9 @@ def _gql(domain, tok, query, variables):
                  {"Content-Type": "application/json", "X-Shopify-Access-Token": tok})
 
 def _parse_rows(cols, rows):
-    """ShopifyQL tableData -> [(date, total_sales, orders, returns)]. Rows may arrive
-    as dicts keyed by column name or as positional lists; handle both. 'returns' is
-    stored as a positive refund amount (ShopifyQL reports it negative)."""
+    """ShopifyQL tableData -> [(date, total_sales, orders, returns, returned_items)].
+    Rows may arrive as dicts keyed by column name or as positional lists; handle both.
+    'returns' is stored as a positive refund amount (ShopifyQL reports it negative)."""
     def val(row, name):
         if isinstance(row, dict): return row.get(name)
         try: return row[cols.index(name)]
@@ -59,22 +59,24 @@ def _parse_rows(cols, rows):
         ds = str(val(r, "day") or "")[:10]
         try: d = date.fromisoformat(ds)
         except ValueError: continue
-        out.append((d, num(r, "total_sales"), int(num(r, "orders")), abs(num(r, "returns"))))
+        out.append((d, num(r, "total_sales"), int(num(r, "orders")),
+                    abs(num(r, "returns")), int(abs(num(r, "quantity_returned")))))
     return out
 
 def _aggregate(days, today):
-    """days: [(date, total_sales, orders, returns)]; today: store-local date.
-    Returns per-window totals. Pure/testable — no network."""
+    """days: [(date, total_sales, orders, returns, returned_items)]; today: store-local
+    date. Returns per-window totals. Pure/testable — no network."""
     windows = [("Today", today),
                ("Last 7 days", today - timedelta(days=6)),
                ("Last 30 days", today - timedelta(days=29))]
     out = []
     for label, start in windows:
-        cnt = 0; rev = 0.0; ref = 0.0
-        for d, ts, oc, rt in days:
+        cnt = 0; rev = 0.0; ref = 0.0; ritems = 0
+        for d, ts, oc, rt, ri in days:
             if d >= start:
-                cnt += oc; rev += ts; ref += rt
-        out.append({"label": label, "orders": cnt, "revenue": round(rev, 2), "refunds": round(ref, 2)})
+                cnt += oc; rev += ts; ref += rt; ritems += ri
+        out.append({"label": label, "orders": cnt, "revenue": round(rev, 2),
+                    "refunds": round(ref, 2), "refund_items": ritems})
     return out
 
 def _today_local(tzname):
