@@ -17,6 +17,11 @@ app = Flask(__name__)
 
 def esc(s): return _html.escape(str(s or ""))
 
+CUR_SYM = {"USD": "$", "CAD": "$", "AUD": "$", "NZD": "$", "EUR": "€", "GBP": "£", "JPY": "¥"}
+def cur_symbol(code):
+    code = (code or "").upper()
+    return CUR_SYM.get(code, (code + " ") if code else "")
+
 CSS = """
 *{box-sizing:border-box}
 body{margin:0;background:#eef2f5;color:#13242e;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
@@ -28,8 +33,9 @@ body{margin:0;background:#eef2f5;color:#13242e;font-family:system-ui,-apple-syst
 .evt{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px dashed #e1e8ec}
 .evt:last-child{border-bottom:none}
 .evt .when{flex:0 0 auto;width:120px;font-size:12.5px;color:#566772;padding-top:2px}
-.evt .what{font-size:15px}
-.evt .loc{font-size:12.5px;color:#8a97a0}
+.evt .info{min-width:0;flex:1 1 auto}
+.evt .what{font-size:15px;overflow-wrap:anywhere}
+.evt .loc{font-size:12.5px;color:#8a97a0;overflow-wrap:anywhere}
 .empty{color:#66727a;font-size:14px;padding:10px 0}
 .err{color:#933;font-size:13.5px;padding:10px 0}
 a{color:#155C7A;text-decoration:none}
@@ -58,7 +64,7 @@ def render_calendar():
             if e["url"]:
                 title = f"<a href='{esc(e['url'])}' target='_blank' rel='noopener'>{title}</a>"
             rows.append(f"<div class=evt><div class=when>{esc(e['when'])}</div>"
-                        f"<div><div class=what>{title}</div>{loc}</div></div>")
+                        f"<div class=info><div class=what>{title}</div>{loc}</div></div>")
         inner = "".join(rows)
     return f"<div class=tile><h2>Upcoming Calendar</h2><div class=body>{inner}</div></div>"
 
@@ -69,11 +75,12 @@ def render_sales():
         inner = f"<div class=err>{esc(data['error'])}</div>"
     else:
         cur = data.get("currency", "")
+        sym = cur_symbol(cur)
         cards = []
         for w in data["windows"]:
-            rev = f"{w['revenue']:,.2f}"
+            rev = f"{sym}{w['revenue']:,.2f}"
             cards.append(f"<div class=stat><div class=lbl>{esc(w['label'])}</div>"
-                         f"<div class=vals><div class=rev>{rev}</div>"
+                         f"<div class=vals><div class=rev>{esc(rev)}</div>"
                          f"<div class=ord>{w['orders']} order{'s' if w['orders']!=1 else ''}</div></div></div>")
         note = "<div class=note>Showing the most recent 30 days (capped).</div>" if data.get("capped") else ""
         inner = f"<div class=sales>{''.join(cards)}</div>{note}"

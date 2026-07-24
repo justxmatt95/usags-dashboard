@@ -41,7 +41,7 @@ shopify.sales = lambda: {"shop": "USA Gundam Store", "currency": "USD",
                                      {"label": "Last 7 days", "orders": 3, "revenue": 175.0},
                                      {"label": "Last 30 days", "orders": 4, "revenue": 185.0}]}
 html = A.render_sales()
-assert "Shopify Sales" in html and "150.00" in html and "(USD)" in html and "2 orders" in html and "USA Gundam Store" in html
+assert "Shopify Sales" in html and "$150.00" in html and "(USD)" in html and "2 orders" in html and "USA Gundam Store" in html
 print("render OK")
 
 shopify.sales = lambda: {"error": "Shopify not configured"}
