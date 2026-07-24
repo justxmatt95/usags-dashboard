@@ -1,18 +1,28 @@
 """Shopify provider: sales summary tile (orders + revenue over time windows).
 
-Read-only. Uses the same client-credentials token flow as the agent. One paginated
-pass over the last 30 days of orders is bucketed into Today / 7d / 30d in code, so
-counts and revenue for all three windows come from a single fetch.
+Read-only. Uses the same client-credentials token flow as the agent, then runs a
+single ShopifyQL query (shopifyqlQuery, Admin API 2025-10+) that returns per-day
+total_sales + orders for the last 30 days. Shopify aggregates server-side, so there
+is no order-by-order pagination and no volume cap — one small response regardless of
+how many orders the store does. Days are bucketed into Today / 7d / 30d in code,
+anchored to the store's local calendar day. Requires the read_reports scope.
+
+'total_sales' is Shopify's own sales metric (what Analytics shows), so the tile
+matches the admin dashboard rather than re-summing raw order totals.
 """
 import os, json, datetime, urllib.request, urllib.error, urllib.parse
-from datetime import timezone, timedelta
+from datetime import timezone, timedelta, date
 try:
     from zoneinfo import ZoneInfo
 except Exception:
     ZoneInfo = None
 
 API_VERSION = "2026-07"
-_MAX_PAGES = 40           # 40 * 250 = up to 10k orders/30d before we flag "capped"
+
+# 31 daily rows (30d ago .. today). ShopifyQL day timestamps are in the shop's tz.
+_SALES_QL = "FROM sales SHOW total_sales, orders TIMESERIES day SINCE -30d UNTIL today ORDER BY day ASC"
+_QL_Q = "query($q:String!){shopifyqlQuery(query:$q){tableData{columns{name} rows} parseErrors}}"
+_SHOP_Q = "{ shop { name currencyCode ianaTimezone } }"
 
 def _cfg():
     return (os.getenv("SHOPIFY_STORE_DOMAIN"), os.getenv("SHOPIFY_CLIENT_ID"), os.getenv("SHOPIFY_CLIENT_SECRET"))
@@ -33,38 +43,47 @@ def _gql(domain, tok, query, variables):
     return _post(domain, f"/admin/api/{API_VERSION}/graphql.json", body,
                  {"Content-Type": "application/json", "X-Shopify-Access-Token": tok})
 
-_SHOP_Q = "{ shop { name currencyCode ianaTimezone } }"
-_ORDERS_Q = """query($q:String!,$after:String){orders(first:250,query:$q,sortKey:CREATED_AT,reverse:true,after:$after){
-  edges{node{createdAt currentTotalPriceSet{shopMoney{amount}}}}
-  pageInfo{hasNextPage endCursor}}}"""
+def _parse_rows(cols, rows):
+    """ShopifyQL tableData -> [(date, total_sales, orders)]. Rows may arrive as
+    dicts keyed by column name or as positional lists; handle both."""
+    def val(row, name):
+        if isinstance(row, dict): return row.get(name)
+        try: return row[cols.index(name)]
+        except (ValueError, IndexError): return None
+    out = []
+    for r in rows:
+        ds = str(val(r, "day") or "")[:10]
+        try: d = date.fromisoformat(ds)
+        except ValueError: continue
+        try: ts = float(val(r, "total_sales") or 0)
+        except (TypeError, ValueError): ts = 0.0
+        try: oc = int(float(val(r, "orders") or 0))
+        except (TypeError, ValueError): oc = 0
+        out.append((d, ts, oc))
+    return out
 
-def _window_starts(now_utc, tzname):
-    """Start instants (UTC) for Today (store-local calendar day), 7d, 30d rolling."""
+def _aggregate(days, today):
+    """days: [(date, total_sales, orders)]; today: store-local date.
+    Returns per-window totals. Pure/testable — no network."""
+    windows = [("Today", today),
+               ("Last 7 days", today - timedelta(days=6)),
+               ("Last 30 days", today - timedelta(days=29))]
+    out = []
+    for label, start in windows:
+        cnt = 0; rev = 0.0
+        for d, ts, oc in days:
+            if d >= start:
+                cnt += oc; rev += ts
+        out.append({"label": label, "orders": cnt, "revenue": round(rev, 2)})
+    return out
+
+def _today_local(tzname):
     tz = None
     if tzname and ZoneInfo:
         try: tz = ZoneInfo(tzname)
         except Exception: tz = None
-    local = now_utc.astimezone(tz) if tz else now_utc
-    midnight_local = local.replace(hour=0, minute=0, second=0, microsecond=0)
-    today = midnight_local.astimezone(timezone.utc)
-    return [("Today", today), ("Last 7 days", now_utc - timedelta(days=7)),
-            ("Last 30 days", now_utc - timedelta(days=30))]
-
-def _aggregate(orders, now_utc, tzname):
-    """orders: list of {'created': iso, 'amount': float}. Returns per-window totals.
-    Pure/testable — no network."""
-    starts = _window_starts(now_utc, tzname)
-    out = []
-    for label, start in starts:
-        cnt = 0; rev = 0.0
-        for o in orders:
-            try: dt = datetime.datetime.fromisoformat(o["created"])
-            except Exception: continue
-            if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
-            if dt >= start:
-                cnt += 1; rev += float(o["amount"] or 0)
-        out.append({"label": label, "orders": cnt, "revenue": round(rev, 2)})
-    return out
+    now = datetime.datetime.now(timezone.utc)
+    return (now.astimezone(tz) if tz else now).date()
 
 def sales():
     domain, cid, csec = _cfg()
@@ -73,25 +92,17 @@ def sales():
     try:
         tok = _token(domain, cid, csec)
         shop = _gql(domain, tok, _SHOP_Q, {}).get("data", {}).get("shop", {}) or {}
-        now = datetime.datetime.now(timezone.utc)
-        since = (now - timedelta(days=30)).strftime("created_at:>=%Y-%m-%dT%H:%M:%SZ")
-        orders, after, capped = [], None, False
-        for _ in range(_MAX_PAGES):
-            d = _gql(domain, tok, _ORDERS_Q, {"q": since, "after": after})
-            if "errors" in d:
-                return {"error": f"orders query failed: {json.dumps(d['errors'])[:300]}"}
-            conn = d["data"]["orders"]
-            for e in conn["edges"]:
-                n = e["node"]
-                orders.append({"created": n["createdAt"],
-                               "amount": n["currentTotalPriceSet"]["shopMoney"]["amount"]})
-            if conn["pageInfo"]["hasNextPage"]:
-                after = conn["pageInfo"]["endCursor"]
-            else:
-                break
-        else:
-            capped = True
+        d = _gql(domain, tok, _QL_Q, {"q": _SALES_QL})
+        if "errors" in d:
+            return {"error": f"sales query failed: {json.dumps(d['errors'])[:300]}"}
+        res = (d.get("data", {}) or {}).get("shopifyqlQuery") or {}
+        if res.get("parseErrors"):
+            return {"error": f"ShopifyQL error: {json.dumps(res['parseErrors'])[:300]}"}
+        table = res.get("tableData") or {}
+        cols = [c["name"] for c in table.get("columns", [])]
+        days = _parse_rows(cols, table.get("rows", []))
+        today = _today_local(shop.get("ianaTimezone"))
         return {"shop": shop.get("name", ""), "currency": shop.get("currencyCode", ""),
-                "windows": _aggregate(orders, now, shop.get("ianaTimezone")), "capped": capped}
+                "windows": _aggregate(days, today)}
     except Exception as e:
         return {"error": f"Shopify fetch failed: {e}"}
