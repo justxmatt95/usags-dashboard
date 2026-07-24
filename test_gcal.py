@@ -24,6 +24,25 @@ assert "Upcoming Calendar" in html and "Vendor call" in html and "Zoom" in html
 assert "&lt;" not in "Vendor call"  # sanity
 print("render (events) OK")
 
+# 2b) a URL in the location becomes a clickable link; hangoutLink -> "Join video call"
+link_items = gcal._normalize([
+    {"summary": "Design review", "start": {"dateTime": "2026-07-25T10:00:00-04:00"},
+     "location": "Call here: https://zoom.us/j/123456", "hangoutLink": "https://meet.google.com/abc-defg-hij"},
+])
+gcal.upcoming_events = lambda limit=8: {"events": link_items, "count": 1}
+h = A.render_calendar()
+assert "<a href='https://zoom.us/j/123456'" in h, h          # location URL is a link
+assert "Join video call" in h and "https://meet.google.com/abc-defg-hij" in h, h
+print("linkify OK: location URLs + Meet link are clickable")
+
+# 2c) a location URL with markup is still escaped (no injection via location)
+inj = gcal._normalize([{"summary": "X", "start": {"date": "2026-07-28"},
+                        "location": "http://x/<script>y</script>"}])
+gcal.upcoming_events = lambda limit=8: {"events": inj, "count": 1}
+hi = A.render_calendar()
+assert "<script>y</script>" not in hi and "&lt;script&gt;" in hi, hi
+print("linkify escaping OK")
+
 gcal.upcoming_events = lambda limit=8: {"events": [], "count": 0}
 assert "No upcoming events" in A.render_calendar()
 gcal.upcoming_events = lambda limit=8: {"error": "not authorized yet"}

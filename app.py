@@ -6,7 +6,7 @@ the same way: a provider module returns data, a render_* function makes a card.
 NOTE: no login yet — bind to localhost for local testing. Before this goes on the
 internet we add the same auth + Caddy/HTTPS as the agent (see README).
 """
-import os, html as _html
+import os, re, html as _html
 from flask import Flask
 from dotenv import load_dotenv
 
@@ -21,6 +21,20 @@ CUR_SYM = {"USD": "$", "CAD": "$", "AUD": "$", "NZD": "$", "EUR": "€", "GBP": 
 def cur_symbol(code):
     code = (code or "").upper()
     return CUR_SYM.get(code, (code + " ") if code else "")
+
+_URL_RE = re.compile(r"(https?://[^\s<]+)")
+def linkify(text):
+    """HTML-escape `text`, turning any http(s) URL into a clickable link."""
+    out = []
+    for i, part in enumerate(_URL_RE.split(text or "")):
+        if i % 2:  # a matched URL
+            url = part.rstrip(".,);]!?")          # don't swallow trailing punctuation
+            tail = part[len(url):]
+            u = esc(url)
+            out.append(f"<a href='{u}' target='_blank' rel='noopener'>{u}</a>{esc(tail)}")
+        else:
+            out.append(esc(part))
+    return "".join(out)
 
 CSS = """
 *{box-sizing:border-box}
@@ -61,12 +75,14 @@ def render_calendar():
     else:
         rows = []
         for e in data["events"]:
-            loc = f"<div class=loc>{esc(e['location'])}</div>" if e["location"] else ""
+            loc = f"<div class=loc>{linkify(e['location'])}</div>" if e["location"] else ""
+            meet = (f"<div class=loc><a href='{esc(e['meet'])}' target='_blank' rel='noopener'>"
+                    "Join video call</a></div>") if e.get("meet") else ""
             title = esc(e["title"])
             if e["url"]:
                 title = f"<a href='{esc(e['url'])}' target='_blank' rel='noopener'>{title}</a>"
             rows.append(f"<div class=evt><div class=when>{esc(e['when'])}</div>"
-                        f"<div class=info><div class=what>{title}</div>{loc}</div></div>")
+                        f"<div class=info><div class=what>{title}</div>{loc}{meet}</div></div>")
         inner = "".join(rows)
     return f"<div class=tile><h2>Upcoming Calendar</h2><div class=body>{inner}</div></div>"
 
